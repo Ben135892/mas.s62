@@ -38,8 +38,7 @@ func TestForgery(t *testing.T) {
 	}
 
 	// report the correct string here
-	t.Logf("Forged message string:\n%s\n cointains substring 'forge'; OK",
-		forgedString)
+	t.Logf("Forged message string:\n%s\n cointains substring 'forge'; OK", forgedString)
 
 	forgedMsg := GetMessageFromString(forgedString)
 

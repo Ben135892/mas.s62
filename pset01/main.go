@@ -21,9 +21,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"math/big"
 )
 
 func main() {
@@ -110,7 +113,7 @@ func HexToPubkey(s string) (PublicKey, error) {
 	// first, make sure hex string is of correct length
 	if len(s) != expectedLength {
 		return p, fmt.Errorf(
-			"Pubkey string %d characters, expect %d", expectedLength)
+			"Pubkey string %d characters, expect %d", len(s), expectedLength)
 	}
 
 	// decode from hex to a byte slice
@@ -188,7 +191,7 @@ func HexToSignature(s string) (Signature, error) {
 	// first, make sure hex string is of correct length
 	if len(s) != expectedLength {
 		return sig, fmt.Errorf(
-			"Pubkey string %d characters, expect %d", expectedLength)
+			"Pubkey string %d characters, expect %d", len(s), expectedLength)
 	}
 
 	// decode from hex to a byte slice
@@ -212,6 +215,14 @@ func GetMessageFromString(s string) Message {
 
 // --- Functions
 
+func randByte() (byte, error) {
+	val, err := rand.Int(rand.Reader, big.NewInt(int64(math.MaxInt8)))
+	if err != nil {
+		return 0, err
+	}
+	return byte(val.Int64()), nil
+}
+
 // GenerateKey takes no arguments, and returns a keypair and potentially an
 // error.  It gets randomness from the OS via crypto/rand
 // This can return an error if there is a problem with reading random bytes
@@ -219,9 +230,30 @@ func GenerateKey() (SecretKey, PublicKey, error) {
 	// initialize SecretKey variable 'sec'.  Starts with all 00 bytes.
 	var sec SecretKey
 	var pub PublicKey
-
 	// Your code here
 	// ===
+	// secret key is 256 pairs of random 256 bit numbers
+	for i := 0; i < 256; i++ {
+		var block1 Block
+		var block2 Block
+		for j := 0; j < 32; j++ {
+			random1, err1 := randByte()
+			if err1 != nil {
+				return sec, pub, err1
+			}
+			block1[j] = random1
+			random2, err2 := randByte()
+			if err2 != nil {
+				return sec, pub, err2
+			}
+			block2[j] = random2
+		}
+		sec.ZeroPre[i] = block1
+		sec.OnePre[i] = block2
+		// hash block1 and block2 to get private key block
+		pub.ZeroHash[i] = block1.Hash()
+		pub.OneHash[i] = block2.Hash()
+	}
 
 	// ===
 	return sec, pub, nil
@@ -233,18 +265,66 @@ func Sign(msg Message, sec SecretKey) Signature {
 
 	// Your code here
 	// ===
-
+	// iterate through each bit of msg
+	index := 0
+	for i := 0; i < 32; i++ {
+		// each byte
+		b := msg[i]
+		for j := 7; j >= 0; j-- {
+			x := byte(math.Pow(2, float64(j))) & b
+			if x != 0 {
+				// bit is a 1
+				sig.Preimage[index] = sec.OnePre[index]
+			} else {
+				// bit is a 0
+				sig.Preimage[index] = sec.ZeroPre[index]
+			}
+			index++
+		}
+	}
 	// ===
 	return sig
 }
 
 // Verify takes a message, public key and signature, and returns a boolean
 // describing the validity of the signature.
+
+//
 func Verify(msg Message, pub PublicKey, sig Signature) bool {
 
 	// Your code here
 	// ===
-
+	// find public key hashes from message
+	var publicKeyHash [256]Block
+	// iterate through each bit of msg
+	index := 0
+	for i := 0; i < 32; i++ {
+		// each byte of msg
+		b := msg[i]
+		for j := 7; j >= 0; j-- {
+			x := byte(math.Pow(2, float64(j))) & b
+			if x != 0 {
+				// bit is a 1
+				publicKeyHash[index] = pub.OneHash[index]
+			} else {
+				// bit is a 0
+				publicKeyHash[index] = pub.ZeroHash[index]
+			}
+			index++
+		}
+		// hash each block of the signature
+		sig.Preimage[i] = sig.Preimage[i].Hash()
+	}
+	//check each byte of sig equals each byte of calculated public key hashes
+	for i := 0; i < 32; i++ {
+		byte1 := publicKeyHash[i]
+		byte2 := sig.Preimage[i]
+		for j := 0; j < 32; j++ {
+			if byte1[j] != byte2[j] {
+				return false
+			}
+		}
+	}
 	// ===
 
 	return true

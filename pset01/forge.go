@@ -119,12 +119,59 @@ func Forge() (string, Signature, error) {
 	fmt.Printf("ok 3: %v\n", Verify(msgslice[2], pub, sig3))
 	fmt.Printf("ok 4: %v\n", Verify(msgslice[3], pub, sig4))
 
-	msgString := "my forged message"
+	msgString := "bens forged signature attempt: 1916305865"
 	var sig Signature
 
 	// your code here!
 	// ==
 	// Geordi La
+	var blockExists [2][256]bool
+
+	var partialKey SecretKey
+	for i, msg := range msgslice {
+		// iterate through each bit j of message. If bit j = 1, then partialKey.OnePre = signature block j.
+		for j := 0; j < 256; j++ {
+			bit := (msg[j/8] >> (7 - (j % 8))) & 0x01
+			if bit == 1 {
+				partialKey.OnePre[j] = sigslice[i].Preimage[j]
+				blockExists[1][j] = true
+			} else {
+				partialKey.ZeroPre[j] = sigslice[i].Preimage[j]
+				blockExists[0][j] = true
+			}
+		}
+	}
+	// generate the partial secret key
+	// attempt as many messages, check each bit is in corresponding partial key block
+	continueLooping := true
+	for i := 0; continueLooping; i++ {
+		msgValid := true
+		//msgString = fmt.Sprintf("%s%d", msgString, i)
+		hash := GetMessageFromString(msgString)
+		for j := 0; j < 256; j++ {
+			if !msgValid {
+				break
+			}
+			bit := (hash[j/8] >> (7 - (j % 8))) & 0x01
+			if bit == 1 {
+				// check block exists in partial private key
+				if blockExists[1][j] {
+					sig.Preimage[j] = partialKey.OnePre[j]
+				} else {
+					msgValid = false
+				}
+			} else {
+				if blockExists[0][j] {
+					sig.Preimage[j] = partialKey.ZeroPre[j]
+				} else {
+					msgValid = false
+				}
+			}
+			if j == 255 && msgValid {
+				continueLooping = false
+			}
+		}
+	}
 	// ==
 
 	return msgString, sig, nil
