@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // A hash is a sha256 hash, as in pset01
@@ -73,7 +74,8 @@ func BlockFromString(s string) (Block, error) {
 func main() {
 
 	fmt.Printf("NameChain Miner v0.1\n")
-
+	targetBits := uint8(20)
+	THREAD_COUNT := 8
 	// Your code here!
 
 	// Basic idea:
@@ -81,6 +83,47 @@ func main() {
 	// then submit to server.
 	// To reduce stales, poll the server every so often and update the
 	// tip you're mining off of if it has changed.
+	kill := make(chan bool)
+	out := make(chan uint64)
+	tip := Block{sha256.Sum256([]byte("")), "", ""}
+	block := Block{sha256.Sum256([]byte("")), "", ""}
+	first := true
 
-	return
+	for {
+		select {
+		case <-time.After(5 * time.Second):
+			// request tip from server
+			new_tip, err := GetTipFromServer()
+			if err != nil {
+				fmt.Println(err)
+			}
+			if new_tip.Nonce != tip.Nonce {
+				tip = new_tip
+				// new block has been mined
+				if !first {
+					for i := 0; i < THREAD_COUNT; i++ {
+						kill <- true
+					}
+				} else {
+					first = false
+				}
+				block = Block{
+					new_tip.Hash(),
+					"Ben135892",
+					"",
+				}
+				go block.Mine(targetBits, kill, out)
+			}
+		case nonce := <-out:
+			// successfully mined a block, send to server
+			for i := 0; i < THREAD_COUNT-1; i++ {
+				kill <- true
+			}
+			first = true
+			block.Nonce = fmt.Sprintf("%d", nonce)
+			SendBlockToServer(block)
+			fmt.Printf("Mined a new block!")
+		}
+	}
+
 }
